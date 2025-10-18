@@ -1,0 +1,19 @@
+{
+  "Levy": "1399",
+  "Manufacturer": "LEXUS",
+  "Model": "RX 450",
+  "Prod_year": 2010,
+  "Category": "Jeep",
+  "Leather_interior": "Yes",
+  "Fuel_type": "Hybrid",
+  "Engine_volume": 3.5,
+  "Mileage": 186005,
+  "Cylinders": 6.0,
+  "Gear_box_type": "Automatic",
+  "Drive_wheels": "4x4",
+  "Wheel": "Left wheel",
+  "Color": "Silver",
+  "Airbags": 12,
+  "Age": 15,
+  "Mileage_per_year": 12400
+}

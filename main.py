@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from typing import Optional
 import joblib
 import pandas as pd
 import traceback
@@ -7,8 +9,17 @@ import traceback
 # Initialize FastAPI
 app = FastAPI(title="Car Price API")
 
+# Add CORS middleware to allow requests from Postman and browsers
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Load the trained pipeline
-model = joblib.load("xgb_car_price_pipeline.pkl")
+model = joblib.load("xgb_car_price_pipeline.pkl")line.pkl")
 
 # Define what the input data should look like
 class CarFeatures(BaseModel):
@@ -26,12 +37,10 @@ class CarFeatures(BaseModel):
     Drive_wheels: str
     Wheel: str
     Color: str
-    Airbags: float
-    Age: int
-    Mileage_per_year: float | None = None
+    Airbags: f    Mileage_per_year: Optional[float] = None
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = Trueon_by_field_name = True
 
 # Mapping from API schema fields to model/dataset fields (simplified, as JSON uses model field names)
 api_to_model_fields = {
@@ -76,11 +85,10 @@ def map_api_to_model(data: dict):
 # Define root endpoint
 @app.get("/")
 def home():
-    return {"message": "Car Price API running successfully"}
-
-# Define prediction endpoint
-@app.post("/predict")
+    return {"message": "Car @app.post("/predict")
 async def predict_price(features: CarFeatures):
+    try:
+        data_dict = features.model_dump()eatures: CarFeatures):
     try:
         data_dict = features.dict()
         model_data = map_api_to_model(data_dict)
