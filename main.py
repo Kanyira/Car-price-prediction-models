@@ -75,22 +75,30 @@ api_to_model_fields = {
 }
 
 def map_api_to_model(data: dict):
+    """
+    Map API field names to model field names and perform necessary transformations
+    """
     model_data = {}
+    
     for api_key, model_key in api_to_model_fields.items():
-        if api_key in data:
-            # Map Leather_interior to 1/0
-            if api_key == "Leather_interior":
-                model_data[model_key] = 1 if data[api_key] == "Yes" else 0
-            # Convert Levy to float (will be cast to int64 later)
-            elif api_key == "Levy":
-                try:
-                    model_data[model_key] = float(data[api_key])
-                except ValueError:
-                    model_data[model_key] = 0.0
-            else:
-                model_data[model_key] = data[api_key]
-        else:
+        value = data.get(api_key)
+        
+        if value is None:
+            # Handle missing values
             model_data[model_key] = None
+        elif api_key == "Leather_interior":
+            # Map Leather_interior to 1/0
+            model_data[model_key] = 1 if value == "Yes" else 0
+        elif api_key == "Levy":
+            # Convert Levy to float (will be cast to int64 later)
+            try:
+                model_data[model_key] = float(value) if value != "-" else 0.0
+            except (ValueError, TypeError):
+                model_data[model_key] = 0.0
+        else:
+            # All other fields
+            model_data[model_key] = value
+    
     return model_data
 
 # Define root endpoint
@@ -102,16 +110,23 @@ def home():
 @app.post("/predict")
 async def predict_price(features: CarFeatures):
     try:
+        # Get the data from the request
         data_dict = features.model_dump()
+        print("Received data:", data_dict)
+        
+        # Map API fields to model fields
         model_data = map_api_to_model(data_dict)
+        print("Mapped data:", model_data)
         
         # Calculate Mileage_per_year if None
-        if model_data["Mileage_per_year"] is None:
+        if model_data.get("Mileage_per_year") is None or model_data["Mileage_per_year"] is None:
             model_data["Mileage_per_year"] = model_data["Mileage"] / max(model_data["Age"], 0.1)
         
+        # Create DataFrame with correct column names
         df = pd.DataFrame([model_data])
-        print("Input DataFrame:", df.to_dict())
-        print("Input dtypes:", df.dtypes.to_dict())
+        print("DataFrame columns:", df.columns.tolist())
+        print("DataFrame shape:", df.shape)
+        print("DataFrame head:", df.head())
         
         # Enforce training data column order
         expected_columns = [
@@ -119,6 +134,14 @@ async def predict_price(features: CarFeatures):
             'Fuel type', 'Engine volume', 'Mileage', 'Cylinders', 'Gear box type',
             'Drive wheels', 'Wheel', 'Color', 'Airbags', 'Age', 'Mileage_per_year'
         ]
+        
+        # Check for missing columns
+        missing_cols = set(expected_columns) - set(df.columns)
+        if missing_cols:
+            print(f"ERROR: Missing columns: {missing_cols}")
+            print(f"Available columns: {df.columns.tolist()}")
+            raise ValueError(f"Missing required columns: {missing_cols}")
+        
         df = df[expected_columns]
         
         # Cast data types to match training data
@@ -132,12 +155,15 @@ async def predict_price(features: CarFeatures):
         df['Cylinders'] = df['Cylinders'].astype('float64')
         df['Mileage_per_year'] = df['Mileage_per_year'].astype('float64')
         
-        print("Processed DataFrame:", df.to_dict())
-        print("Processed dtypes:", df.dtypes.to_dict())
+        print("Processed DataFrame columns:", df.columns.tolist())
+        print("Processed DataFrame dtypes:", df.dtypes.to_dict())
         
+        # Make prediction
         prediction = model.predict(df)
         price = float(prediction[0])
         
         return {"predicted_price": round(price, 2)}
     except Exception as e:
+        print(f"ERROR: {str(e)}")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}\n{traceback.format_exc()}")
