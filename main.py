@@ -1,10 +1,19 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional
 import joblib
 import pandas as pd
 import traceback
+import warnings
+
+# Suppress sklearn version warnings
+warnings.filterwarnings('ignore', category=UserWarning)
+
+# Compatibility fix for sklearn version differences
+import sklearn.compose._column_transformer as ct
+if not hasattr(ct, '_RemainderColsList'):
+    ct._RemainderColsList = list
 
 # Initialize FastAPI
 app = FastAPI(title="Car Price API")
@@ -19,7 +28,7 @@ app.add_middleware(
 )
 
 # Load the trained pipeline
-model = joblib.load("xgb_car_price_pipeline.pkl")line.pkl")
+model = joblib.load("xgb_car_price_pipeline.pkl")
 
 # Define what the input data should look like
 class CarFeatures(BaseModel):
@@ -37,12 +46,14 @@ class CarFeatures(BaseModel):
     Drive_wheels: str
     Wheel: str
     Color: str
-    Airbags: f    Mileage_per_year: Optional[float] = None
+    Airbags: float
+    Age: int
+    Mileage_per_year: Optional[float] = None
 
     class Config:
-        populate_by_name = Trueon_by_field_name = True
+        populate_by_name = True
 
-# Mapping from API schema fields to model/dataset fields (simplified, as JSON uses model field names)
+# Mapping from API schema fields to model/dataset fields
 api_to_model_fields = {
     "Levy": "Levy",
     "Manufacturer": "Manufacturer",
@@ -85,19 +96,23 @@ def map_api_to_model(data: dict):
 # Define root endpoint
 @app.get("/")
 def home():
-    return {"message": "Car @app.post("/predict")
+    return {"message": "Car Price API running successfully"}
+
+# Define prediction endpoint
+@app.post("/predict")
 async def predict_price(features: CarFeatures):
     try:
-        data_dict = features.model_dump()eatures: CarFeatures):
-    try:
-        data_dict = features.dict()
+        data_dict = features.model_dump()
         model_data = map_api_to_model(data_dict)
+        
         # Calculate Mileage_per_year if None
         if model_data["Mileage_per_year"] is None:
             model_data["Mileage_per_year"] = model_data["Mileage"] / max(model_data["Age"], 0.1)
+        
         df = pd.DataFrame([model_data])
         print("Input DataFrame:", df.to_dict())
         print("Input dtypes:", df.dtypes.to_dict())
+        
         # Enforce training data column order
         expected_columns = [
             'Levy', 'Manufacturer', 'Model', 'Prod. year', 'Category', 'Leather interior',
@@ -105,6 +120,7 @@ async def predict_price(features: CarFeatures):
             'Drive wheels', 'Wheel', 'Color', 'Airbags', 'Age', 'Mileage_per_year'
         ]
         df = df[expected_columns]
+        
         # Cast data types to match training data
         df['Levy'] = df['Levy'].astype('int64')
         df['Mileage'] = df['Mileage'].astype('int64')
@@ -115,10 +131,13 @@ async def predict_price(features: CarFeatures):
         df['Engine volume'] = df['Engine volume'].astype('float64')
         df['Cylinders'] = df['Cylinders'].astype('float64')
         df['Mileage_per_year'] = df['Mileage_per_year'].astype('float64')
+        
         print("Processed DataFrame:", df.to_dict())
         print("Processed dtypes:", df.dtypes.to_dict())
+        
         prediction = model.predict(df)
         price = float(prediction[0])
+        
         return {"predicted_price": round(price, 2)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}\n{traceback.format_exc()}")
