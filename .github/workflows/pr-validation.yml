@@ -1,0 +1,84 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 black
+
+      - name: Lint Python code
+        run: |
+          flake8 main.py --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 main.py --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Run backend tests
+        run: |
+          python test_api.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Lint frontend code
+        working-directory: ./frontend
+        run: npm run build
+
+  docker-build:
+    name: Verify Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: car-price-backend:test
+
+      - name: Build frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          tags: car-price-frontend:test
+
+      - name: Test with docker-compose
+        run: |
+          docker-compose up -d
+          sleep 10
+          curl -f http://localhost:8000/ || exit 1
+          curl -f http://localhost/ || exit 1
+          docker-compose down

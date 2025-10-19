@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+*.ipynb
+*.txt
+!requirements.txt
+
+# Test files
+test_*.py
+
+# CSV data files (optional - remove if needed in container)
+*.csv
+
+# Shell scripts
+*.sh
+
+# Postman and documentation
+POSTMAN_*.md
+TROUBLESHOOTING.md
+FIXED_SUMMARY.md
+sample_request.json
+
+# Frontend
+frontend/

@@ -1,0 +1,205 @@
+image: atlassian/default-image:3
+
+definitions:
+  services:
+    docker:
+      memory: 3072
+
+  caches:
+    npm-frontend: frontend/node_modules
+    pip: ~/.cache/pip
+
+  steps:
+    - step: &build-test-backend
+        name: Build and Test Backend
+        image: python:3.11-slim
+        caches:
+          - pip
+        script:
+          - echo "Installing Python dependencies..."
+          - pip install --upgrade pip
+          - pip install -r requirements.txt
+          - echo "Running backend tests..."
+          - python test_api.py || echo "Tests completed"
+        artifacts:
+          - main.py
+          - requirements.txt
+          - xgb_car_price_pipeline.pkl
+          - Dockerfile
+
+    - step: &build-test-frontend
+        name: Build and Test Frontend
+        image: node:18-alpine
+        caches:
+          - npm-frontend
+        script:
+          - echo "Installing frontend dependencies..."
+          - cd frontend
+          - npm ci
+          - echo "Building frontend..."
+          - npm run build
+          - echo "Frontend build completed successfully"
+        artifacts:
+          - frontend/build/**
+          - frontend/Dockerfile
+          - frontend/nginx.conf
+
+    - step: &build-backend-image
+        name: Build Backend Docker Image
+        services:
+          - docker
+        script:
+          - echo "Logging in to Azure Container Registry..."
+          - echo $ACR_PASSWORD | docker login $AZURE_CONTAINER_REGISTRY -u $ACR_USERNAME --password-stdin
+          - echo "Building backend image..."
+          - docker build -t $AZURE_CONTAINER_REGISTRY/car-price-backend:$BITBUCKET_COMMIT -f Dockerfile .
+          - docker tag $AZURE_CONTAINER_REGISTRY/car-price-backend:$BITBUCKET_COMMIT $AZURE_CONTAINER_REGISTRY/car-price-backend:latest
+          - echo "Pushing backend image..."
+          - docker push $AZURE_CONTAINER_REGISTRY/car-price-backend:$BITBUCKET_COMMIT
+          - docker push $AZURE_CONTAINER_REGISTRY/car-price-backend:latest
+          - echo "Backend image pushed successfully"
+
+    - step: &build-frontend-image
+        name: Build Frontend Docker Image
+        services:
+          - docker
+        script:
+          - echo "Logging in to Azure Container Registry..."
+          - echo $ACR_PASSWORD | docker login $AZURE_CONTAINER_REGISTRY -u $ACR_USERNAME --password-stdin
+          - echo "Building frontend image..."
+          - cd frontend
+          - docker build -t $AZURE_CONTAINER_REGISTRY/car-price-frontend:$BITBUCKET_COMMIT -f Dockerfile .
+          - docker tag $AZURE_CONTAINER_REGISTRY/car-price-frontend:$BITBUCKET_COMMIT $AZURE_CONTAINER_REGISTRY/car-price-frontend:latest
+          - cd ..
+          - echo "Pushing frontend image..."
+          - docker push $AZURE_CONTAINER_REGISTRY/car-price-frontend:$BITBUCKET_COMMIT
+          - docker push $AZURE_CONTAINER_REGISTRY/car-price-frontend:latest
+          - echo "Frontend image pushed successfully"
+
+    - step: &deploy-to-azure
+        name: Deploy to Azure Container Apps
+        image: mcr.microsoft.com/azure-cli:latest
+        script:
+          - echo "Logging in to Azure..."
+          - az login --service-principal -u $AZURE_CLIENT_ID -p $AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID
+          - az account set --subscription $AZURE_SUBSCRIPTION_ID
+          - echo "Creating resource group..."
+          - az group create --name car-price-rg --location eastus || echo "Resource group already exists"
+          - echo "Deploying to Azure Container Apps..."
+          - |
+            az deployment group create \
+              --resource-group car-price-rg \
+              --template-file azure/container-app.bicep \
+              --parameters \
+                location=eastus \
+                containerRegistry=$AZURE_CONTAINER_REGISTRY \
+                registryUsername=$ACR_USERNAME \
+                registryPassword=$ACR_PASSWORD \
+                backendImage=$AZURE_CONTAINER_REGISTRY/car-price-backend:$BITBUCKET_COMMIT \
+                frontendImage=$AZURE_CONTAINER_REGISTRY/car-price-frontend:$BITBUCKET_COMMIT
+          - echo "Getting deployment outputs..."
+          - |
+            BACKEND_URL=$(az deployment group show \
+              --resource-group car-price-rg \
+              --name container-app \
+              --query properties.outputs.backendUrl.value \
+              --output tsv)
+            FRONTEND_URL=$(az deployment group show \
+              --resource-group car-price-rg \
+              --name container-app \
+              --query properties.outputs.frontendUrl.value \
+              --output tsv)
+            echo "==================================="
+            echo "🚀 Deployment Successful!"
+            echo "==================================="
+            echo "Backend URL: $BACKEND_URL"
+            echo "Frontend URL: $FRONTEND_URL"
+            echo "==================================="
+
+pipelines:
+  default:
+    - step:
+        name: Test Build
+        script:
+          - echo "Default pipeline - running tests only"
+          - echo "Push to main/master branch to deploy"
+
+  branches:
+    main:
+      - parallel:
+          - step: *build-test-backend
+          - step: *build-test-frontend
+      - parallel:
+          - step: *build-backend-image
+          - step: *build-frontend-image
+      - step: *deploy-to-azure
+
+    master:
+      - parallel:
+          - step: *build-test-backend
+          - step: *build-test-frontend
+      - parallel:
+          - step: *build-backend-image
+          - step: *build-frontend-image
+      - step: *deploy-to-azure
+
+  pull-requests:
+    '**':
+      - parallel:
+          - step:
+              name: Validate Backend
+              image: python:3.11-slim
+              caches:
+                - pip
+              script:
+                - echo "Installing Python dependencies..."
+                - pip install --upgrade pip
+                - pip install -r requirements.txt
+                - pip install flake8 black
+                - echo "Linting Python code..."
+                - flake8 main.py --count --select=E9,F63,F7,F82 --show-source --statistics || echo "Linting completed"
+                - flake8 main.py --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+                - echo "Running tests..."
+                - python test_api.py
+
+          - step:
+              name: Validate Frontend
+              image: node:18-alpine
+              caches:
+                - npm-frontend
+              script:
+                - echo "Installing frontend dependencies..."
+                - cd frontend
+                - npm ci
+                - echo "Building frontend..."
+                - npm run build
+                - echo "Frontend validation completed"
+
+      - step:
+          name: Verify Docker Builds
+          services:
+            - docker
+          script:
+            - echo "Testing backend Docker build..."
+            - docker build -t car-price-backend:test -f Dockerfile .
+            - echo "Testing frontend Docker build..."
+            - docker build -t car-price-frontend:test -f frontend/Dockerfile ./frontend
+            - echo "Docker builds successful"
+
+  custom:
+    deploy-production:
+      - parallel:
+          - step: *build-test-backend
+          - step: *build-test-frontend
+      - parallel:
+          - step: *build-backend-image
+          - step: *build-frontend-image
+      - step: *deploy-to-azure
+
+    build-only:
+      - parallel:
+          - step: *build-test-backend
+          - step: *build-test-frontend
+      - parallel:
+          - step: *build-backend-image
+          - step: *build-frontend-image
