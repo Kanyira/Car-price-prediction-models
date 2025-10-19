@@ -162,7 +162,7 @@ Make sure `xgb_car_price_pipeline.pkl` is in the same directory as `main.py`
 ### DevOps
 - **Docker** - Containerization
 - **Docker Compose** - Multi-container orchestration
-- **GitHub Actions** - CI/CD pipeline
+- **Bitbucket Pipelines** - CI/CD automation
 - **Azure Container Apps** - Cloud hosting
 - **Azure Container Registry** - Docker image registry
 
@@ -181,9 +181,9 @@ car-price-prediction-models/
 │   ├── container-app.bicep  # Infrastructure as Code
 │   ├── parameters.json      # Deployment parameters
 │   └── setup-azure.sh       # Setup script
-├── .github/workflows/        # CI/CD pipelines
-│   ├── deploy-azure.yml     # Main deployment pipeline
-│   └── pr-validation.yml    # PR validation
+├── bitbucket-pipelines.yml   # CI/CD pipeline configuration
+├── azure/                    # Azure deployment configs
+│   ├── setup-azure-bitbucket.sh  # Bitbucket setup script
 ├── main.py                   # FastAPI backend
 ├── xgb_car_price_pipeline.pkl  # Trained ML model
 ├── Dockerfile                # Backend container config
@@ -194,28 +194,29 @@ car-price-prediction-models/
 
 ## 🚀 Deployment
 
-### Deploy to Azure
+### Deploy to Azure with Bitbucket Pipelines
 
 1. **Setup Azure resources:**
    ```bash
    cd azure
-   ./setup-azure.sh
+   ./setup-azure-bitbucket.sh
    ```
 
-2. **Configure GitHub Secrets:**
-   - `AZURE_CREDENTIALS`
-   - `AZURE_CONTAINER_REGISTRY`
-   - `ACR_USERNAME`
-   - `ACR_PASSWORD`
+2. **Configure Bitbucket Repository Variables:**
+   - Go to Repository Settings → Pipelines → Repository variables
+   - Add all 7 variables from setup script output
+   - Mark sensitive values as "Secured"
 
-3. **Push to main branch:**
+3. **Enable Pipelines and Push:**
    ```bash
+   git add bitbucket-pipelines.yml
+   git commit -m "Add CI/CD pipeline"
    git push origin main
    ```
 
-The CI/CD pipeline will automatically build, test, and deploy to Azure!
+The pipeline will automatically build, test, and deploy to Azure!
 
-For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md)
+For detailed setup, see [BITBUCKET_SETUP.md](BITBUCKET_SETUP.md) or [BITBUCKET_QUICKSTART.md](BITBUCKET_QUICKSTART.md)
 
 ### Local Docker Deployment
 
@@ -237,32 +238,38 @@ For detailed Docker instructions, see [DOCKER.md](DOCKER.md)
 
 ## 📖 Documentation
 
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Complete deployment guide for Azure
+- **[BITBUCKET_QUICKSTART.md](BITBUCKET_QUICKSTART.md)** - ⚡ Quick 10-minute setup
+- **[BITBUCKET_SETUP.md](BITBUCKET_SETUP.md)** - Complete Bitbucket Pipelines guide
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Detailed deployment guide for Azure
 - **[DOCKER.md](DOCKER.md)** - Docker and containerization guide
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
 - **[POSTMAN_INSTRUCTIONS.md](POSTMAN_INSTRUCTIONS.md)** - API testing guide
 
 ## 🔄 CI/CD Pipeline
 
-The project includes automated GitHub Actions workflows:
+The project includes automated Bitbucket Pipelines:
 
-### Main Pipeline (`deploy-azure.yml`)
-- ✅ Build and test backend
-- ✅ Build and test frontend
-- ✅ Build Docker images
+### Main Pipeline (main/master branches)
+- ✅ Build and test backend (parallel)
+- ✅ Build and test frontend (parallel)
+- ✅ Build Docker images (parallel)
 - ✅ Push to Azure Container Registry
 - ✅ Deploy to Azure Container Apps
-- ✅ Run health checks
+- ✅ Output deployment URLs
 
-### PR Validation (`pr-validation.yml`)
+### PR Validation (pull requests)
 - ✅ Lint Python and JavaScript code
 - ✅ Run automated tests
 - ✅ Verify Docker builds
-- ✅ Test with docker-compose
+- ❌ No deployment (validation only)
+
+### Custom Pipelines
+- `deploy-production`: Manual deployment trigger
+- `build-only`: Build without deploying
 
 ## 🌐 Live Demo
 
-After deployment, you'll get:
-- **Frontend URL**: `https://<your-app>.azurecontainerapps.io`
-- **Backend API**: `https://<your-api>.azurecontainerapps.io`
-- **Swagger Docs**: `https://<your-api>.azurecontainerapps.io/docs`
+After pipeline deployment, check the logs for URLs:
+- **Frontend URL**: `https://car-price-frontend-xxx.azurecontainerapps.io`
+- **Backend API**: `https://car-price-backend-xxx.azurecontainerapps.io`
+- **Swagger Docs**: `https://car-price-backend-xxx.azurecontainerapps.io/docs`
