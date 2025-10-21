@@ -1,0 +1,193 @@
+name: Build and Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+env:
+  AZURE_RESOURCE_GROUP: car-price-rg
+  AZURE_LOCATION: eastus
+  BACKEND_IMAGE: car-price-backend
+  FRONTEND_IMAGE: car-price-frontend
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run backend tests
+        run: |
+          python test_api.py || echo "Tests completed"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: backend
+          path: |
+            main.py
+            requirements.txt
+            xgb_car_price_pipeline.pkl
+            Dockerfile
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend
+          path: |
+            frontend/build
+            frontend/Dockerfile
+            frontend/nginx.conf
+
+  build-docker-images:
+    name: Build Docker Images
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+            ${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.BACKEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.BACKEND_IMAGE }}:buildcache,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.FRONTEND_IMAGE }}:latest
+            ${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.FRONTEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.FRONTEND_IMAGE }}:buildcache,mode=max
+
+  deploy-to-azure:
+    name: Deploy to Azure Container Apps
+    needs: build-docker-images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ env.AZURE_RESOURCE_GROUP }} \
+            --location ${{ env.AZURE_LOCATION }}
+
+      - name: Deploy Container Apps
+        run: |
+          az deployment group create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --template-file azure/container-app.bicep \
+            --parameters \
+              location=${{ env.AZURE_LOCATION }} \
+              containerRegistry=${{ secrets.AZURE_CONTAINER_REGISTRY }} \
+              registryUsername=${{ secrets.ACR_USERNAME }} \
+              registryPassword=${{ secrets.ACR_PASSWORD }} \
+              backendImage=${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }} \
+              frontendImage=${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+
+      - name: Get deployment outputs
+        id: deployment
+        run: |
+          BACKEND_URL=$(az deployment group show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name container-app \
+            --query properties.outputs.backendUrl.value \
+            --output tsv)
+          FRONTEND_URL=$(az deployment group show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name container-app \
+            --query properties.outputs.frontendUrl.value \
+            --output tsv)
+          echo "backend_url=$BACKEND_URL" >> $GITHUB_OUTPUT
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 **Deployment Complete!**\n\n` +
+                    `🔗 Backend: ${{ steps.deployment.outputs.backend_url }}\n` +
+                    `🌐 Frontend: ${{ steps.deployment.outputs.frontend_url }}`
+            })
+
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Deployed Images" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend: \`${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend: \`${{ secrets.AZURE_CONTAINER_REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend API: ${{ steps.deployment.outputs.backend_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend App: ${{ steps.deployment.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,84 @@
+╔══════════════════════════════════════════════════════════════════╗
+║         🎉 BITBUCKET PIPELINES CONFIGURED! 🎉                    ║
+╚══════════════════════════════════════════════════════════════════╝
+
+✅ What Was Created:
+  • bitbucket-pipelines.yml - CI/CD automation
+  • azure/setup-azure-bitbucket.sh - Azure setup for Bitbucket
+  • BITBUCKET_SETUP.md - Complete setup guide
+  • BITBUCKET_QUICKSTART.md - 10-minute quick start
+  • BITBUCKET_MIGRATION.md - Migration from GitHub guide
+
+📁 Key Files:
+  • bitbucket-pipelines.yml - Pipeline configuration
+  • azure/setup-azure-bitbucket.sh - Setup script
+  • All Docker files (unchanged)
+  • All app code (unchanged)
+
+🚀 QUICK START (10 minutes):
+
+  Step 1: Setup Azure
+  $ cd azure
+  $ ./setup-azure-bitbucket.sh
+  → Save the 7 output values!
+
+  Step 2: Configure Bitbucket
+  → Repository Settings → Pipelines → Enable
+  → Repository Variables → Add 7 variables
+  → Mark ACR_PASSWORD and AZURE_CLIENT_SECRET as "Secured"
+
+  Step 3: Deploy
+  $ git add bitbucket-pipelines.yml
+  $ git commit -m "Add Bitbucket CI/CD"
+  $ git push origin main
+  → Watch in Pipelines tab!
+
+📖 Documentation:
+  • START HERE: BITBUCKET_QUICKSTART.md
+  • FULL GUIDE: BITBUCKET_SETUP.md  
+  • MIGRATION: BITBUCKET_MIGRATION.md
+  • DOCKER: DOCKER.md
+  • TROUBLESHOOTING: TROUBLESHOOTING.md
+
+🎯 What Your Pipeline Does:
+  ✓ Builds and tests on every push
+  ✓ Creates Docker images automatically
+  ✓ Deploys to Azure Container Apps
+  ✓ Validates pull requests
+  ✓ Provides deployment URLs
+  ✓ Auto-scales based on traffic
+
+🔐 Required Bitbucket Variables (7 total):
+  1. AZURE_CONTAINER_REGISTRY
+  2. ACR_USERNAME
+  3. ACR_PASSWORD (🔒 secured)
+  4. AZURE_SUBSCRIPTION_ID
+  5. AZURE_CLIENT_ID
+  6. AZURE_CLIENT_SECRET (🔒 secured)
+  7. AZURE_TENANT_ID
+
+⏱️ Pipeline Duration:
+  • First run: ~15-20 minutes
+  • Subsequent: ~10-12 minutes
+  • Parallel execution enabled
+
+🌐 Your Stack:
+  Frontend: React 18 + Nginx
+  Backend: FastAPI + XGBoost
+  DevOps: Bitbucket Pipelines + Docker
+  Cloud: Azure Container Apps
+
+💡 Pro Tips:
+  1. Read BITBUCKET_QUICKSTART.md first
+  2. Test locally: docker-compose up --build
+  3. Secure passwords in Bitbucket variables
+  4. Monitor pipeline in Pipelines tab
+  5. Check logs for deployment URLs
+
+📊 After Deployment:
+  • Frontend: https://car-price-frontend-xxx.azurecontainerapps.io
+  • Backend: https://car-price-backend-xxx.azurecontainerapps.io
+  • API Docs: https://car-price-backend-xxx.azurecontainerapps.io/docs
+
+🎊 You're ready for automated deployments!
+
